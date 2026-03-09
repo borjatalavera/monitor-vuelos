@@ -8,6 +8,15 @@ from dotenv import load_dotenv
 # Cargar variables de entorno para desarrollo local
 load_dotenv()
 
+def load_airlines():
+    # Cargar base de datos local de IATAs de aerolíneas
+    try:
+        with open('airlines.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print("Advertencia: airlines.json no encontrado, se usarán los códigos IATA crudos.")
+        return {}
+
 def send_telegram_message(message):
     token = os.getenv('TELEGRAM_BOT_TOKEN')
     chat_id = os.getenv('TELEGRAM_CHAT_ID')
@@ -80,6 +89,9 @@ def main():
     threshold = config['price_threshold']
     min_duration = config.get('min_duration_days', 7)
     max_duration = config.get('max_duration_days', 16)
+    
+    # Cargar aerolíneas desde json
+    airlines_map = load_airlines()
 
     # Cargar estado anterior (cache)
     state_file = 'state.json'
@@ -113,7 +125,11 @@ def main():
                 current_price = float(cheapest_flight['price']['total'])
                 currency = cheapest_flight['price']['currency']
                 
-                print(f"  -> Mejor precio para {route_id}: {current_price} {currency}")
+                # Extraer Código de Aerolínea (Carrier)
+                carrier_code = cheapest_flight['validatingAirlineCodes'][0]
+                airline_name = airlines_map.get(carrier_code, carrier_code)
+                
+                print(f"  -> Mejor precio para {route_id}: {current_price} {currency} ({airline_name})")
                 
                 # Lógica de alerta
                 if current_price <= threshold:
@@ -123,24 +139,21 @@ def main():
                     if last_price is None or current_price < (last_price * 0.98):
                         # Generar enlaces de búsqueda
                         kayak_link = f"https://www.kayak.com.ar/flights/{origin}-{dest}/{date}/{return_date}?sort=price_a"
-                        google_simple = f"https://www.google.com/flights?hl=es#flt={origin}.{dest}.{date}*{dest}.{origin}.{return_date}"
-                        despegar_link = f"https://www.despegar.com.ar/shop/flights/results/roundtrip/{origin}/{dest}/{date}/{return_date}/1/0/0/NA/NA/NA/NA/NA"
+                        google_link = f"https://www.google.com/travel/flights?q=Flights%20to%20{dest}%20from%20{origin}%20on%20{date}%20through%20{return_date}"
                         turismocity_link = f"https://www.turismocity.com.ar/vuelos-baratos-a-{dest}-desde-{origin}"
-                        mytrip_link = f"https://ar.mytrip.com/"
+                        despegar_link = f"https://www.despegar.com.ar/shop/flights/results/roundtrip/{origin}/{dest}/{date}/{return_date}/1/0/0/NA/NA/NA/NA/NA"
     
                         message = (
-                            f"✈️ *¡Vuelo Ida y Vuelta Económico!*\n\n"
-                            f"📍 *Ruta:* {origin} <-> {dest}\n"
-                            f"📅 *Ida:* {date} | *Vuelta:* {return_date}\n"
-                            f"💰 *Precio Total:* *{current_price} {currency}*\n"
-                            f"📉 *Umbral:* {threshold} {currency}\n\n"
-                            f"🔗 *Reservar/Ver:* \n"
-                            f"[✈️ Kayak]({kayak_link}) | "
-                            f"[🔍 Google Flights]({google_simple})\n"
-                            f"[🧳 Despegar]({despegar_link}) | "
-                            f"[🏙️ Turismocity]({turismocity_link})\n"
-                            f"[🗺️ Mytrip]({mytrip_link})\n\n"
-                            f"_[Cotejado contra último precio: {last_price if last_price else 'N/A'}]_"
+                            f"✈️ *¡OFERTA DETECTADA!*\n\n"
+                            f"🏢 *Aerolínea:* {airline_name} ({carrier_code})\n"
+                            f"📍 *Ruta:* {origin} ↔️ {dest}\n"
+                            f"📅 *Fechas:* {date} al {return_date} ({duration} días)\n\n"
+                            f"💰 *Precio Base:* `{current_price} {currency}`\n"
+                            f"⚠️ _Nota: En AR, sumar impuestos locales (PAIS/Ganancias) si no figuran._\n\n"
+                            f"🔗 *Ver en:* \n"
+                            f"[🔍 Google Flights]({google_link}) | [✈️ Kayak]({kayak_link})\n"
+                            f"[🧳 Despegar]({despegar_link}) | [🏙️ Turismocity]({turismocity_link})\n\n"
+                            f"_[Último precio visto: {last_price if last_price else 'N/A'}]_"
                         )
                         send_telegram_message(message)
                         new_state[route_id] = current_price
