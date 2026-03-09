@@ -28,13 +28,14 @@ def send_telegram_message(message):
     except Exception as e:
         print(f"Error enviando mensaje a Telegram: {e}")
 
-def get_flight_prices(amadeus, origin, destination, departure_date):
+def get_flight_prices(amadeus, origin, destination, departure_date, return_date):
     try:
-        print(f"Consultando Amadeus: {origin} -> {destination} el {departure_date}...")
+        print(f"Consultando Amadeus: {origin} <-> {destination} del {departure_date} al {return_date}...")
         response = amadeus.shopping.flight_offers_search.get(
             originLocationCode=origin,
             destinationLocationCode=destination,
             departureDate=departure_date,
+            returnDate=return_date,
             adults=1,
             max=3
         )
@@ -77,6 +78,8 @@ def main():
     destinations = config['destinations']
     dates = get_date_range(config['start_date'], config['end_date'])
     threshold = config['price_threshold']
+    min_duration = config.get('min_duration_days', 7)
+    max_duration = config.get('max_duration_days', 16)
 
     # Cargar estado anterior (cache)
     state_file = 'state.json'
@@ -92,52 +95,58 @@ def main():
 
     for dest in destinations:
         for date in dates:
-            route_id = f"{origin}-{dest}-{date}"
-            
-            flights = get_flight_prices(amadeus, origin, dest, date)
-            
-            if not flights:
-                continue
+            for duration in range(min_duration, max_duration + 1):
+                # Calcular fecha de regreso
+                departure_dt = datetime.strptime(date, "%Y-%m-%d")
+                return_dt = departure_dt + timedelta(days=duration)
+                return_date = return_dt.strftime("%Y-%m-%d")
                 
-            # Obtener el precio más bajo del día
-            cheapest_flight = min(flights, key=lambda x: float(x['price']['total']))
-            current_price = float(cheapest_flight['price']['total'])
-            currency = cheapest_flight['price']['currency']
-            
-            print(f"  -> Mejor precio para {route_id}: {current_price} {currency}")
-            
-            # Lógica de alerta
-            if current_price <= threshold:
-                last_price = state.get(route_id)
+                route_id = f"{origin}-{dest}-{date}-RT{duration}"
                 
-                # Solo alertar si el precio bajó significativamente (>2%) o si es nuevo
-                if last_price is None or current_price < (last_price * 0.98):
-                    # Generar enlaces de búsqueda
-                    kayak_link = f"https://www.kayak.com.ar/flights/{origin}-{dest}/{date}?sort=price_a"
-                    google_simple = f"https://www.google.com/flights?hl=es#flt={origin}.{dest}.{date}"
-                    despegar_link = f"https://www.despegar.com.ar/shop/flights/results/oneway/{origin}/{dest}/{date}/1/0/0/NA/NA/NA/NA/NA"
-                    turismocity_link = f"https://www.turismocity.com.ar/vuelos-baratos-a-{dest}-desde-{origin}"
-                    mytrip_link = f"https://ar.mytrip.com/"
-
-                    message = (
-                        f"✈️ *¡Vuelo Económico Encontrado!*\n\n"
-                        f"📍 *Ruta:* {origin} -> {dest}\n"
-                        f"📅 *Fecha:* {date}\n"
-                        f"💰 *Precio:* *{current_price} {currency}*\n"
-                        f"📉 *Umbral:* {threshold} {currency}\n\n"
-                        f"🔗 *Reservar/Ver:* \n"
-                        f"[✈️ Kayak]({kayak_link}) | "
-                        f"[🔍 Google Flights]({google_simple})\n"
-                        f"[🧳 Despegar]({despegar_link}) | "
-                        f"[🏙️ Turismocity]({turismocity_link})\n"
-                        f"[🗺️ Mytrip]({mytrip_link})\n\n"
-                        f"_[Cotejado contra último precio: {last_price if last_price else 'N/A'}]_"
-                    )
-                    send_telegram_message(message)
-                    new_state[route_id] = current_price
-            
-            # Guardar siempre el precio más reciente visto para la próxima comparación
-            new_state[route_id] = current_price
+                flights = get_flight_prices(amadeus, origin, dest, date, return_date)
+                
+                if not flights:
+                    continue
+                    
+                # Obtener el precio más bajo del día
+                cheapest_flight = min(flights, key=lambda x: float(x['price']['total']))
+                current_price = float(cheapest_flight['price']['total'])
+                currency = cheapest_flight['price']['currency']
+                
+                print(f"  -> Mejor precio para {route_id}: {current_price} {currency}")
+                
+                # Lógica de alerta
+                if current_price <= threshold:
+                    last_price = state.get(route_id)
+                    
+                    # Solo alertar si el precio bajó significativamente (>2%) o si es nuevo
+                    if last_price is None or current_price < (last_price * 0.98):
+                        # Generar enlaces de búsqueda
+                        kayak_link = f"https://www.kayak.com.ar/flights/{origin}-{dest}/{date}/{return_date}?sort=price_a"
+                        google_simple = f"https://www.google.com/flights?hl=es#flt={origin}.{dest}.{date}*{dest}.{origin}.{return_date}"
+                        despegar_link = f"https://www.despegar.com.ar/shop/flights/results/roundtrip/{origin}/{dest}/{date}/{return_date}/1/0/0/NA/NA/NA/NA/NA"
+                        turismocity_link = f"https://www.turismocity.com.ar/vuelos-baratos-a-{dest}-desde-{origin}"
+                        mytrip_link = f"https://ar.mytrip.com/"
+    
+                        message = (
+                            f"✈️ *¡Vuelo Ida y Vuelta Económico!*\n\n"
+                            f"📍 *Ruta:* {origin} <-> {dest}\n"
+                            f"📅 *Ida:* {date} | *Vuelta:* {return_date}\n"
+                            f"💰 *Precio Total:* *{current_price} {currency}*\n"
+                            f"📉 *Umbral:* {threshold} {currency}\n\n"
+                            f"🔗 *Reservar/Ver:* \n"
+                            f"[✈️ Kayak]({kayak_link}) | "
+                            f"[🔍 Google Flights]({google_simple})\n"
+                            f"[🧳 Despegar]({despegar_link}) | "
+                            f"[🏙️ Turismocity]({turismocity_link})\n"
+                            f"[🗺️ Mytrip]({mytrip_link})\n\n"
+                            f"_[Cotejado contra último precio: {last_price if last_price else 'N/A'}]_"
+                        )
+                        send_telegram_message(message)
+                        new_state[route_id] = current_price
+                
+                # Guardar siempre el precio más reciente visto para la próxima comparación
+                new_state[route_id] = current_price
 
     # Guardar estado actualizado
     with open(state_file, 'w') as f:
