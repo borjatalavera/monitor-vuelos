@@ -1,21 +1,20 @@
 import os
 import json
 import requests
-from datetime import datetime, timedelta
-from amadeus import Client, ResponseError
+import re
+from datetime import datetime
 from dotenv import load_dotenv
+
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 # Cargar variables de entorno para desarrollo local
 load_dotenv()
-
-def load_airlines():
-    # Cargar base de datos local de IATAs de aerolíneas
-    try:
-        with open('airlines.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        print("Advertencia: airlines.json no encontrado, se usarán los códigos IATA crudos.")
-        return {}
 
 def send_telegram_message(message):
     token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -28,54 +27,32 @@ def send_telegram_message(message):
     payload = {
         'chat_id': chat_id,
         'text': message,
-        'parse_mode': 'Markdown'
+        'parse_mode': 'Markdown',
+        'disable_web_page_preview': False
     }
     try:
         response = requests.post(url, json=payload)
-        print(f"Respuesta de Telegram: {response.status_code}")
         response.raise_for_status()
     except Exception as e:
         print(f"Error enviando mensaje a Telegram: {e}")
 
-def get_flight_prices(amadeus, origin, destination, departure_date, return_date, currency_code="USD"):
-    try:
-        print(f"Consultando Amadeus: {origin} <-> {destination} del {departure_date} al {return_date}...")
-        response = amadeus.shopping.flight_offers_search.get(
-            originLocationCode=origin,
-            destinationLocationCode=destination,
-            departureDate=departure_date,
-            returnDate=return_date,
-            adults=1,
-            max=5,
-            currencyCode=currency_code
-        )
-        return response.data
-    except ResponseError as error:
-        print(f"Error en la API de Amadeus ({origin}-{destination}): {error}")
-        return []
+def create_driver():
+    opts = Options()
+    opts.add_argument('--headless')
+    opts.add_argument('--no-sandbox')
+    opts.add_argument('--disable-dev-shm-usage')
+    opts.add_argument('--window-size=1920,1080')
+    opts.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36')
+    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
 
-def get_date_range(start_date_str, end_date_str):
-    start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-    end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
-    
-    dates = []
-    current_date = start_date
-    while current_date <= end_date:
-        dates.append(current_date.strftime("%Y-%m-%d"))
-        # Buscamos cada 7 días para no saturar la API y cubrir el rango
-        current_date += timedelta(days=7)
-    return dates
+def extract_price(text):
+    # Extrae solo los dígitos de un string como "a partir de $ 1.343.054"
+    digits = re.sub(r'[^\d]', '', text)
+    if digits:
+        return int(digits)
+    return None
 
 def main():
-    api_key = os.getenv('AMADEUS_API_KEY')
-    api_secret = os.getenv('AMADEUS_API_SECRET')
-    
-    if not api_key or not api_secret:
-        print("Error: AMADEUS_API_KEY o AMADEUS_API_SECRET no configurados.")
-        return
-
-    amadeus = Client(client_id=api_key, client_secret=api_secret)
-
     # Cargar configuración
     try:
         with open('config.json', 'r') as f:
@@ -86,14 +63,8 @@ def main():
 
     origin = config['origin']
     destinations = config['destinations']
-    dates = get_date_range(config['start_date'], config['end_date'])
     threshold = config['price_threshold']
-    pref_currency = config.get('currency', 'USD')
-    min_duration = config.get('min_duration_days', 7)
-    max_duration = config.get('max_duration_days', 16)
-    
-    # Cargar aerolíneas desde json
-    airlines_map = load_airlines()
+    currency = config.get('currency', 'ARS')
 
     # Cargar estado anterior (cache)
     state_file = 'state.json'
@@ -107,61 +78,56 @@ def main():
 
     new_state = state.copy()
 
-    for dest in destinations:
-        for date in dates:
-            for duration in range(min_duration, max_duration + 1):
-                # Calcular fecha de regreso
-                departure_dt = datetime.strptime(date, "%Y-%m-%d")
-                return_dt = departure_dt + timedelta(days=duration)
-                return_date = return_dt.strftime("%Y-%m-%d")
+    print("Iniciando Selenium WebDriver...")
+    driver = create_driver()
+
+    try:
+        for dest in destinations:
+            url = f"https://www.turismocity.com.ar/vuelos-baratos-a-{dest}-desde-{origin}"
+            route_id = f"{origin}-{dest}-Tendencia"
+            print(f"\nConsultando Turismocity: {origin} -> {dest}...")
+            
+            driver.get(url)
+            
+            try:
+                # Esperar a que el selector de precio cargue
+                # Intentamos con .best-price-amount o h1.title que tiene el precio visible
+                price_element = WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, '.best-price-amount, h1'))
+                )
+                price_text = price_element.text
+                current_price = extract_price(price_text)
                 
-                route_id = f"{origin}-{dest}-{date}-RT{duration}"
-                
-                flights = get_flight_prices(amadeus, origin, dest, date, return_date, pref_currency)
-                
-                if not flights:
-                    continue
+                if current_price:
+                    print(f"  -> Mejor precio detectado para {dest}: {current_price} {currency} (Texto original: '{price_text}')")
                     
-                # Obtener el precio más bajo del día
-                cheapest_flight = min(flights, key=lambda x: float(x['price']['total']))
-                current_price = float(cheapest_flight['price']['total'])
-                currency = cheapest_flight['price']['currency']
-                
-                # Extraer Código de Aerolínea (Carrier)
-                carrier_code = cheapest_flight['validatingAirlineCodes'][0]
-                airline_name = airlines_map.get(carrier_code, carrier_code)
-                
-                print(f"  -> Mejor precio para {route_id}: {current_price} {currency} ({airline_name})")
-                
-                # Lógica de alerta
-                if current_price <= threshold:
-                    last_price = state.get(route_id)
+                    if current_price <= threshold:
+                        last_price = state.get(route_id)
+                        
+                        # Alertar si bajó >2% o es nuevo
+                        if last_price is None or current_price < (last_price * 0.98):
+                            message = (
+                                f"🔥 *¡OFERTA EN TENDENCIA DE TURISMOCITY!*\n\n"
+                                f"📍 *Ruta:* {origin} ↔️ {dest}\n"
+                                f"💰 *Precio Mínimo Detectado:* `{current_price:,} {currency}`\n\n"
+                                f"🔗 *Ver Disponibilidad en Turismocity:* \n[Turismocity]({url})\n\n"
+                                f"_[Último precio visto: {last_price} {currency} | Umbral: {threshold}]_"
+                            )
+                            send_telegram_message(message)
+                        else:
+                            print(f"    - Sin alerta: El precio no bajó un 2% (Actual: {current_price}, Anterior: {last_price})")
+                    else:
+                        print(f"    - Sin alerta: Precio {current_price} mayor al umbral de {threshold}")
                     
-                    # Solo alertar si el precio bajó significativamente (>2%) o si es nuevo
-                    if last_price is None or current_price < (last_price * 0.98):
-                        # Generar enlaces de búsqueda
-                        kayak_link = f"https://www.kayak.com.ar/flights/{origin}-{dest}/{date}/{return_date}?sort=price_a"
-                        google_link = f"https://www.google.com/travel/flights?q=Flights%20to%20{dest}%20from%20{origin}%20on%20{date}%20through%20{return_date}"
-                        turismocity_link = f"https://www.turismocity.com.ar/vuelos-baratos-a-{dest}-desde-{origin}"
-                        despegar_link = f"https://www.despegar.com.ar/shop/flights/results/roundtrip/{origin}/{dest}/{date}/{return_date}/1/0/0/NA/NA/NA/NA/NA"
-    
-                        message = (
-                            f"✈️ *¡OFERTA DETECTADA!*\n\n"
-                            f"🏢 *Aerolínea:* {airline_name} ({carrier_code})\n"
-                            f"📍 *Ruta:* {origin} ↔️ {dest}\n"
-                            f"📅 *Fechas:* {date} al {return_date} ({duration} días)\n\n"
-                            f"💰 *Precio Base:* `{current_price} {currency}`\n"
-                            f"⚠️ _Nota: En AR, sumar impuestos locales (PAIS/Ganancias) si no figuran._\n\n"
-                            f"🔗 *Ver en:* \n"
-                            f"[🔍 Google Flights]({google_link}) | [✈️ Kayak]({kayak_link})\n"
-                            f"[🧳 Despegar]({despegar_link}) | [🏙️ Turismocity]({turismocity_link})\n\n"
-                            f"_[Último precio visto: {last_price if last_price else 'N/A'}]_"
-                        )
-                        send_telegram_message(message)
-                        new_state[route_id] = current_price
+                    new_state[route_id] = current_price
+                else:
+                    print(f"  -> No se pudo extraer un precio entero de '{price_text}'")
+                    
+            except Exception as e:
+                print(f"  -> Falló la extracción para {dest}: El elemento no se encontró o tardó demasiado.")
                 
-                # Guardar siempre el precio más reciente visto para la próxima comparación
-                new_state[route_id] = current_price
+    finally:
+        driver.quit()
 
     # Guardar estado actualizado
     with open(state_file, 'w') as f:

@@ -1,12 +1,10 @@
 {
     "origin": "EZE",
     "destinations": [
-        "MAD"
+        "MAD",
+        "BCN",
+        "MIA"
     ],
-    "start_date": "2026-12-01",
-    "end_date": "2027-03-31",
-    "min_duration_days": 10,
-    "max_duration_days": 11,
-    "price_threshold": 1300.00,
-    "currency": "USD"
+    "price_threshold": 1300000,
+    "currency": "ARS"
 }

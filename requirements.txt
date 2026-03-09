@@ -1,3 +1,4 @@
-amadeus
-requests
 python-dotenv
+requests
+selenium
+webdriver-manager
