@@ -112,12 +112,21 @@ def main():
                 
                 # Solo alertar si el precio bajó significativamente (>2%) o si es nuevo
                 if last_price is None or current_price < (last_price * 0.98):
+                    # Generar enlaces de búsqueda
+                    kayak_link = f"https://www.kayak.com.ar/flights/{origin}-{dest}/{date}?sort=price_a"
+                    google_link = f"https://www.google.com/travel/flights/search?tfs=CBwQAhoeEgoyMDI2LTA2LTE1agcIARIDTUFEdXIECAQSAnpwcAGCAQsI____________AUABSAGYAQE"
+                    # Una forma más simple de Google Flights (aproximada)
+                    google_simple = f"https://www.google.com/flights?hl=es#flt={origin}.{dest}.{date}"
+
                     message = (
                         f"✈️ *¡Vuelo Económico Encontrado!*\n\n"
                         f"📍 *Ruta:* {origin} -> {dest}\n"
                         f"📅 *Fecha:* {date}\n"
-                        f"💰 *Precio:* {current_price} {currency}\n"
+                        f"💰 *Precio:* *{current_price} {currency}*\n"
                         f"📉 *Umbral:* {threshold} {currency}\n\n"
+                        f"🔗 *Reservar/Ver:* \n"
+                        f"[✈️ Ver en Kayak]({kayak_link})\n"
+                        f"[🔍 Ver en Google Flights]({google_simple})\n\n"
                         f"_[Cotejado contra último precio: {last_price if last_price else 'N/A'}]_"
                     )
                     send_telegram_message(message)
