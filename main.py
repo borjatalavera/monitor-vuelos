@@ -28,6 +28,7 @@ def send_telegram_message(message):
         print(f"Error enviando mensaje a Telegram: {e}")
 
 def get_flight_prices(amadeus, origin, destination, departure_date):
+    try:
         print(f"Consultando Amadeus para {origin} -> {destination} el {departure_date}...")
         response = amadeus.shopping.flight_offers_search.get(
             originLocationCode=origin,
