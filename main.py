@@ -22,12 +22,13 @@ def send_telegram_message(message):
     }
     try:
         response = requests.post(url, json=payload)
+        print(f"Respuesta de Telegram: {response.status_code} - {response.text}")
         response.raise_for_status()
     except Exception as e:
         print(f"Error enviando mensaje a Telegram: {e}")
 
 def get_flight_prices(amadeus, origin, destination, departure_date):
-    try:
+        print(f"Consultando Amadeus para {origin} -> {destination} el {departure_date}...")
         response = amadeus.shopping.flight_offers_search.get(
             originLocationCode=origin,
             destinationLocationCode=destination,
@@ -35,6 +36,7 @@ def get_flight_prices(amadeus, origin, destination, departure_date):
             adults=1,
             max=5
         )
+        print(f"Amadeus devolvió {len(response.data)} ofertas.")
         return response.data
     except ResponseError as error:
         print(f"Error en la API de Amadeus: {error}")
