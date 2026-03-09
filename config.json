@@ -1,0 +1,11 @@
+{
+    "routes": [
+        {
+            "origin": "MAD",
+            "destination": "EZE",
+            "departure_date": "2024-12-15",
+            "price_threshold": 800.00
+        }
+    ],
+    "currency": "EUR"
+}
