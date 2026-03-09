@@ -3,7 +3,6 @@
     "destinations": [
         "MAD",
         "FCO",
-        "LHR",
         "MIA"
     ],
     "start_date": "2026-12-01",

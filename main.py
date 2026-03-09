@@ -37,7 +37,7 @@ def send_telegram_message(message):
     except Exception as e:
         print(f"Error enviando mensaje a Telegram: {e}")
 
-def get_flight_prices(amadeus, origin, destination, departure_date, return_date):
+def get_flight_prices(amadeus, origin, destination, departure_date, return_date, currency_code="USD"):
     try:
         print(f"Consultando Amadeus: {origin} <-> {destination} del {departure_date} al {return_date}...")
         response = amadeus.shopping.flight_offers_search.get(
@@ -46,7 +46,8 @@ def get_flight_prices(amadeus, origin, destination, departure_date, return_date)
             departureDate=departure_date,
             returnDate=return_date,
             adults=1,
-            max=3
+            max=5,
+            currencyCode=currency_code
         )
         return response.data
     except ResponseError as error:
@@ -87,6 +88,7 @@ def main():
     destinations = config['destinations']
     dates = get_date_range(config['start_date'], config['end_date'])
     threshold = config['price_threshold']
+    pref_currency = config.get('currency', 'USD')
     min_duration = config.get('min_duration_days', 7)
     max_duration = config.get('max_duration_days', 16)
     
@@ -115,7 +117,7 @@ def main():
                 
                 route_id = f"{origin}-{dest}-{date}-RT{duration}"
                 
-                flights = get_flight_prices(amadeus, origin, dest, date, return_date)
+                flights = get_flight_prices(amadeus, origin, dest, date, return_date, pref_currency)
                 
                 if not flights:
                     continue
