@@ -80,6 +80,7 @@ def main():
         flights = get_flight_prices(amadeus, origin, destination, date)
         
         if not flights:
+            print(f"⚠️ No se encontraron vuelos para la fecha {date}. Asegúrate de que sea una fecha futura.")
             continue
             
         # Obtener el precio más bajo
