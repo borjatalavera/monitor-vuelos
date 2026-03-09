@@ -1,14 +1,12 @@
 {
     "origin": "EZE",
     "destinations": [
-        "MAD",
-        "FCO",
-        "MIA"
+        "MAD"
     ],
     "start_date": "2026-12-01",
     "end_date": "2027-03-31",
-    "min_duration_days": 7,
-    "max_duration_days": 16,
-    "price_threshold": 800.00,
+    "min_duration_days": 10,
+    "max_duration_days": 11,
+    "price_threshold": 1300.00,
     "currency": "USD"
 }
