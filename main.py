@@ -114,9 +114,10 @@ def main():
                 if last_price is None or current_price < (last_price * 0.98):
                     # Generar enlaces de búsqueda
                     kayak_link = f"https://www.kayak.com.ar/flights/{origin}-{dest}/{date}?sort=price_a"
-                    google_link = f"https://www.google.com/travel/flights/search?tfs=CBwQAhoeEgoyMDI2LTA2LTE1agcIARIDTUFEdXIECAQSAnpwcAGCAQsI____________AUABSAGYAQE"
-                    # Una forma más simple de Google Flights (aproximada)
                     google_simple = f"https://www.google.com/flights?hl=es#flt={origin}.{dest}.{date}"
+                    despegar_link = f"https://www.despegar.com.ar/shop/flights/results/oneway/{origin}/{dest}/{date}/1/0/0/NA/NA/NA/NA/NA"
+                    turismocity_link = f"https://www.turismocity.com.ar/vuelos-baratos-a-{dest}-desde-{origin}"
+                    mytrip_link = f"https://ar.mytrip.com/"
 
                     message = (
                         f"✈️ *¡Vuelo Económico Encontrado!*\n\n"
@@ -125,8 +126,11 @@ def main():
                         f"💰 *Precio:* *{current_price} {currency}*\n"
                         f"📉 *Umbral:* {threshold} {currency}\n\n"
                         f"🔗 *Reservar/Ver:* \n"
-                        f"[✈️ Ver en Kayak]({kayak_link})\n"
-                        f"[🔍 Ver en Google Flights]({google_simple})\n\n"
+                        f"[✈️ Kayak]({kayak_link}) | "
+                        f"[🔍 Google Flights]({google_simple})\n"
+                        f"[🧳 Despegar]({despegar_link}) | "
+                        f"[🏙️ Turismocity]({turismocity_link})\n"
+                        f"[🗺️ Mytrip]({mytrip_link})\n\n"
                         f"_[Cotejado contra último precio: {last_price if last_price else 'N/A'}]_"
                     )
                     send_telegram_message(message)
