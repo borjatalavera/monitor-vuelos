@@ -106,12 +106,17 @@ def main():
                         
                         # Alertar si bajó >2% o es nuevo
                         if last_price is None or current_price < (last_price * 0.98):
+                            # Formateo estético de números (puntos para miles en vez de comas)
+                            fmt_current = f"{current_price:,}".replace(',', '.')
+                            fmt_last = f"{last_price:,}".replace(',', '.') if last_price else "N/A"
+                            fmt_thresh = f"{threshold:,}".replace(',', '.')
+                            
                             message = (
                                 f"🔥 *¡OFERTA EN TENDENCIA DE TURISMOCITY!*\n\n"
                                 f"📍 *Ruta:* {origin} ↔️ {dest}\n"
-                                f"💰 *Precio Mínimo Detectado:* `{current_price:,} {currency}`\n\n"
+                                f"💰 *Precio Mínimo Detectado:* `{fmt_current} {currency}`\n\n"
                                 f"🔗 *Ver Disponibilidad en Turismocity:* \n[Turismocity]({url})\n\n"
-                                f"_[Último precio visto: {last_price} {currency} | Umbral: {threshold}]_"
+                                f"_[Último precio visto: {fmt_last} {currency if last_price else ''} | Umbral: {fmt_thresh}]_"
                             )
                             send_telegram_message(message)
                         else:
